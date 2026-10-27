@@ -152,3 +152,28 @@ h1 { margin: 2px 0 0; font-size: 18px; }
   background: #fff;
 }
 .test-note { margin: 23px 0 0; color: var(--muted); text-align: center; font-size: 11px; }
+
+/* 기존 화면의 색상과 모바일 카드 스타일을 확장합니다. */
+.test-badge { margin-left: auto; padding: 6px 9px; color: var(--blue); background: var(--blue-soft); border-radius: 8px; font-size: 10px; font-weight: 700; }
+.steps { display: flex; gap: 7px; margin: 0 0 18px; padding: 0; list-style: none; }
+.steps li { flex: 1; padding: 10px 3px; border-radius: 9px; color: var(--copy); background: #eaf0fa; font-size: 11px; text-align: center; }
+.steps .active { color: #215ebf; background: #dfebff; font-weight: 700; }
+#video { width: 100%; height: 100%; object-fit: cover; }
+#camera-hint { position: absolute; bottom: 16px; left: 8px; right: 8px; color: #e1ebfa; font-size: 11px; text-align: center; text-shadow: 0 1px 4px #000; }
+#start { margin-top: 16px; }
+#stop, #rescan { margin-top: 10px; }
+.help { color: var(--copy); font-size: 11px; line-height: 1.8; }
+.student { margin-bottom: 20px; padding: 15px; border-radius: 11px; background: var(--blue-soft); }
+.student h3 { margin: 0; font-size: 17px; }
+.student p { margin: 6px 0 0; font-size: 12px; color: var(--copy); }
+fieldset { margin: 0; padding: 0; border: 0; }
+legend { margin-bottom: 12px; font-size: 13px; font-weight: 700; }
+.criterion { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; padding: 14px 11px; border: 1px solid #dce6f7; border-radius: 11px; cursor: pointer; }
+.criterion:has(input:checked) { border-color: var(--blue); background: var(--blue-soft); }
+.criterion input { accent-color: var(--blue); width: 17px; height: 17px; }
+.criterion span { flex: 1; color: var(--ink); font-size: 13px; }
+.criterion b { color: var(--blue); font-size: 13px; white-space: nowrap; }
+#receipt { overflow-wrap: anywhere; line-height: 1.8; }
+#message { color: #ab343e; white-space: pre-line; }
+#message:empty { display: none; }
+button:focus-visible, input:focus-visible { outline: 3px solid #e9ae35; outline-offset: 3px; }
