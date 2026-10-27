@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f8ff">
+  <title>생활지도 관리 · QR 테스트</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="phone-app">
+    <header class="phone-header">
+      <div class="brand-mark" aria-hidden="true">高</div>
+      <div>
+        <span class="eyebrow">SCHOOL MANAGEMENT</span>
+        <h1>생활지도 관리</h1>
+      </div>
+    </header>
+
+    <main class="phone-main">
+      <section class="welcome">
+        <span class="date-label">QR SCAN TEST</span>
+        <h2>학생증 QR 확인</h2>
+        <p>학생증의 QR 코드를 스캔하여 식별값이 올바르게 인식되는지 확인해요.</p>
+      </section>
+
+      <section class="scan-card">
+        <div class="scan-card-heading">
+          <div class="scan-icon" aria-hidden="true">⌗</div>
+          <div>
+            <h3>QR 코드 스캔하기</h3>
+            <p>카메라를 실행한 뒤 QR을 사각형에 맞춰주세요.</p>
+          </div>
+        </div>
+
+        <div class="camera-wrap" id="camera-wrap">
+          <video id="camera-preview" autoplay muted playsinline aria-label="QR 스캔 카메라"></video>
+          <div class="scan-frame" aria-hidden="true"></div>
+          <div class="camera-placeholder" id="camera-placeholder">카메라 대기 중</div>
+        </div>
+
+        <p class="scan-status" id="scan-status" role="status" aria-live="polite">스캔 시작 버튼을 눌러주세요.</p>
+
+        <button class="primary-button" id="start-scan" type="button">QR 스캔 시작</button>
+        <div class="button-row">
+          <button class="secondary-button" id="stop-scan" type="button">카메라 종료</button>
+          <button class="secondary-button" id="choose-photo" type="button">사진 불러오기</button>
+        </div>
+        <input id="qr-photo-input" type="file" accept="image/png,image/jpeg,image/webp,image/*" hidden>
+      </section>
+
+      <section class="result-card" id="result-card" hidden>
+        <div class="result-check" aria-hidden="true">✓</div>
+        <h3>QR 인식 완료</h3>
+        <p>인식된 학생 식별값</p>
+        <strong id="result-id"></strong>
+        <button class="secondary-button" id="scan-again" type="button">다른 QR 스캔하기</button>
+      </section>
+
+      <section class="manual-card">
+        <h3>식별값 직접 확인</h3>
+        <p>카메라가 작동하지 않으면 식별값을 직접 입력해볼 수 있어요.</p>
+        <label class="sr-only" for="manual-id">학생 식별값</label>
+        <input id="manual-id" type="text" maxlength="120" placeholder="예: STU-02-07-001" autocomplete="off">
+        <button class="secondary-button" id="check-manual" type="button">입력값 확인</button>
+      </section>
+
+      <p class="test-note">테스트 전용 · 학생명부 조회 및 Google Sheets 저장 기능 없음</p>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>
