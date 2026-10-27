@@ -1,0 +1,179 @@
+@charset "UTF-8";
+
+:root {
+  --blue: #2f78f5;
+  --blue-soft: #edf4ff;
+  --ink: #14264a;
+  --copy: #586b8e;
+  --muted: #94a3be;
+  --line: #e8effa;
+  --surface: #ffffff;
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  color: var(--ink);
+  background: #f3f8ff;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { opacity: .5; cursor: not-allowed; }
+[hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+
+.phone-app {
+  max-width: 520px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: #f9fbff;
+}
+
+.phone-header {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 24px 23px 17px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 2px solid #941139;
+  border-radius: 12px;
+  color: #941139;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.eyebrow { font-size: 9px; letter-spacing: 1.3px; color: var(--muted); }
+h1 { margin: 2px 0 0; font-size: 18px; }
+.phone-main { padding: 24px 20px 36px; }
+.welcome { margin-bottom: 23px; }
+.date-label { font-size: 11px; font-weight: 700; color: var(--blue); }
+.welcome h2 { margin: 7px 0; font-size: 25px; }
+.welcome p, .scan-card-heading p, .manual-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.scan-card, .manual-card, .result-card {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 5px 25px #3862a808;
+}
+
+.scan-card-heading { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.scan-card-heading h3, .manual-card h3 { margin: 0 0 4px; font-size: 16px; }
+.scan-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 43px;
+  height: 43px;
+  border-radius: 12px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 30px;
+}
+
+.camera-wrap {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 1 / 1;
+  border-radius: 15px;
+  background: #1a2540;
+}
+
+#camera-preview { width: 100%; height: 100%; object-fit: cover; }
+.camera-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #bac9e1;
+  background: #1a2540;
+  font-size: 13px;
+}
+.scan-frame {
+  position: absolute;
+  inset: 17%;
+  border: 3px solid #fff;
+  border-radius: 15px;
+  box-shadow: 0 0 0 100vmax #00000035;
+  pointer-events: none;
+}
+.scan-status { margin: 15px 0; color: var(--copy); font-size: 12px; text-align: center; line-height: 1.7; }
+
+.primary-button, .secondary-button {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.primary-button { background: var(--blue); color: #fff; }
+.secondary-button { background: var(--blue-soft); color: #3773e4; }
+.button-row { display: flex; gap: 10px; margin-top: 10px; }
+.button-row > button { flex: 1; }
+
+.result-card { margin-top: 17px; text-align: center; }
+.result-check {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  background: #eaf8f4;
+  color: #24a88f;
+  font-size: 25px;
+}
+.result-card h3 { margin: 0 0 7px; }
+.result-card p { color: var(--muted); font-size: 12px; }
+.result-card strong { display: block; margin: 12px 0 19px; overflow-wrap: anywhere; font-size: 19px; }
+.manual-card { margin-top: 17px; }
+.manual-card input {
+  width: 100%;
+  margin: 16px 0 10px;
+  padding: 13px;
+  border: 1px solid #dce6f7;
+  border-radius: 10px;
+  color: var(--ink);
+  background: #fff;
+}
+.test-note { margin: 23px 0 0; color: var(--muted); text-align: center; font-size: 11px; }
+
+/* 기존 화면의 색상과 모바일 카드 스타일을 확장합니다. */
+.test-badge { margin-left: auto; padding: 6px 9px; color: var(--blue); background: var(--blue-soft); border-radius: 8px; font-size: 10px; font-weight: 700; }
+.steps { display: flex; gap: 7px; margin: 0 0 18px; padding: 0; list-style: none; }
+.steps li { flex: 1; padding: 10px 3px; border-radius: 9px; color: var(--copy); background: #eaf0fa; font-size: 11px; text-align: center; }
+.steps .active { color: #215ebf; background: #dfebff; font-weight: 700; }
+#video { width: 100%; height: 100%; object-fit: cover; }
+#camera-hint { position: absolute; bottom: 16px; left: 8px; right: 8px; color: #e1ebfa; font-size: 11px; text-align: center; text-shadow: 0 1px 4px #000; }
+#start { margin-top: 16px; }
+#stop, #rescan { margin-top: 10px; }
+.help { color: var(--copy); font-size: 11px; line-height: 1.8; }
+.student { margin-bottom: 20px; padding: 15px; border-radius: 11px; background: var(--blue-soft); }
+.student h3 { margin: 0; font-size: 17px; }
+.student p { margin: 6px 0 0; font-size: 12px; color: var(--copy); }
+fieldset { margin: 0; padding: 0; border: 0; }
+legend { margin-bottom: 12px; font-size: 13px; font-weight: 700; }
+.criterion { display: flex; align-items: center; gap: 9px; margin-bottom: 9px; padding: 14px 11px; border: 1px solid #dce6f7; border-radius: 11px; cursor: pointer; }
+.criterion:has(input:checked) { border-color: var(--blue); background: var(--blue-soft); }
+.criterion input { accent-color: var(--blue); width: 17px; height: 17px; }
+.criterion span { flex: 1; color: var(--ink); font-size: 13px; }
+.criterion b { color: var(--blue); font-size: 13px; white-space: nowrap; }
+#receipt { overflow-wrap: anywhere; line-height: 1.8; }
+#message { color: #ab343e; white-space: pre-line; }
+#message:empty { display: none; }
+button:focus-visible, input:focus-visible { outline: 3px solid #e9ae35; outline-offset: 3px; }
