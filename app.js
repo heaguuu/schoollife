@@ -1,230 +1,161 @@
-"use strict";
-
-// QR 테스트용: 학생명부나 Google Sheets에는 접근하지 않습니다.
-const video = document.querySelector("#camera-preview");
-const statusText = document.querySelector("#scan-status");
-const resultCard = document.querySelector("#result-card");
-const resultId = document.querySelector("#result-id");
-const placeholder = document.querySelector("#camera-placeholder");
-const photoInput = document.querySelector("#qr-photo-input");
-const startButton = document.querySelector("#start-scan");
-
-const canvas = document.createElement("canvas");
-const context = canvas.getContext("2d", { willReadFrequently: true });
-
+/* QR 영상은 이 브라우저에서만 해석합니다. 서버에는 QR 문자열만 전달합니다. */
+const $ = (id) => document.getElementById(id);
+const video = $('video');
+const canvas = $('canvas');
+const context = canvas.getContext('2d', { willReadFrequently: true });
 let stream = null;
-let scanning = false;
-let generation = 0;
-let barcodeDetector = null;
+let frame = 0;
+let cameraVersion = 0;
+let busy = false;
+let scan = null;
+let pending = null;
+let lastFrameAt = 0;
 
-function setStatus(message) {
-  statusText.textContent = message;
-}
-
-function stopCamera() {
-  generation += 1;
-  scanning = false;
-
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
-    stream = null;
-  }
-
-  video.pause();
-  video.srcObject = null;
-  placeholder.hidden = false;
-}
-
-function showResult(value) {
-  const raw = String(value ?? "").trim();
-
-  if (!raw) {
-    setStatus("QR에 식별값이 들어 있지 않습니다.");
-    return;
-  }
-
-  stopCamera();
-  resultId.textContent = raw;
-  resultCard.hidden = false;
-  setStatus("QR 인식에 성공했습니다.");
-  resultCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-async function prepareDetector() {
-  // 지원되는 브라우저에서는 내장 QR 인식 기능을 먼저 사용합니다.
-  if ("BarcodeDetector" in window) {
-    try {
-      const formats = await BarcodeDetector.getSupportedFormats();
-      if (formats.includes("qr_code")) {
-        barcodeDetector = new BarcodeDetector({ formats: ["qr_code"] });
-        return true;
-      }
-    } catch (error) {
-      console.warn("내장 QR 인식기를 사용할 수 없습니다.", error);
-    }
-  }
-
-  // 내장 기능이 없으면 jsQR 라이브러리를 사용합니다.
-  return typeof window.jsQR === "function";
-}
-
-async function decodeImage(source, width, height) {
-  if (barcodeDetector) {
-    const codes = await barcodeDetector.detect(source);
-    return codes[0]?.rawValue ?? null;
-  }
-
-  if (typeof window.jsQR !== "function") {
-    throw new Error("QR 인식 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해주세요.");
-  }
-
-  const scale = Math.min(1, 1200 / Math.max(width, height));
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
-  context.drawImage(source, 0, 0, canvas.width, canvas.height);
-
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-  const result = window.jsQR(pixels.data, pixels.width, pixels.height, {
-    inversionAttempts: "attemptBoth"
+function message(text = '') { $('message').textContent = text; }
+function panel(name) {
+  ['scan', 'student', 'done'].forEach((value, i) => {
+    $(`${value}-panel`).hidden = value !== name;
+    $(`step${i + 1}`).classList.toggle('active', value === name);
   });
-
-  return result?.data ?? null;
 }
-
-async function scanFrame(currentGeneration) {
-  if (!scanning || currentGeneration !== generation) return;
-
-  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-    try {
-      const value = await decodeImage(video, video.videoWidth, video.videoHeight);
-
-      if (!scanning || currentGeneration !== generation) return;
-      if (value) {
-        showResult(value);
-        return;
-      }
-    } catch (error) {
-      if (currentGeneration === generation) setStatus(error.message);
-      stopCamera();
-      return;
+function stopCamera() {
+  cameraVersion++;
+  cancelAnimationFrame(frame);
+  stream?.getTracks().forEach((track) => track.stop());
+  stream = null;
+  video.srcObject = null;
+  $('start').hidden = false;
+  $('start').disabled = false;
+  $('stop').hidden = true;
+  $('camera-hint').textContent = '카메라를 켜면 스캔이 시작됩니다';
+}
+async function api(action, payload) {
+  const response = await fetch('/api', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, ...payload }), signal: AbortSignal.timeout(30000)
+  });
+  const result = await response.json();
+  if (!result.ok) {
+    const error = new Error(result.error || '요청을 처리하지 못했습니다.');
+    error.retryable = Boolean(result.retryable);
+    throw error;
+  }
+  return result.data;
+}
+async function lookup(qr) {
+  if (busy) return;
+  busy = true;
+  stopCamera();
+  message('테스트 학생을 확인하고 있습니다…');
+  try {
+    scan = await api('lookup', { qr });
+    pending = null;
+    $('student-name').textContent = scan.student.name;
+    $('student-detail').textContent = `${scan.student.grade}학년 ${scan.student.classNo}반 ${scan.student.number}번 · ${scan.student.id}`;
+    $('criteria').replaceChildren();
+    for (const item of scan.criteria) {
+      const label = document.createElement('label');
+      label.className = 'criterion';
+      const input = document.createElement('input');
+      input.type = 'radio'; input.name = 'criterion'; input.value = item.code;
+      input.addEventListener('change', () => { pending = null; $('submit').disabled = false; });
+      const reason = document.createElement('span');
+      reason.textContent = item.reason;
+      const score = document.createElement('b');
+      score.textContent = `${item.score}점`;
+      label.append(input, reason, score);
+      $('criteria').append(label);
     }
-  }
-
-  if (scanning && currentGeneration === generation) {
-    window.setTimeout(() => scanFrame(currentGeneration), 220);
-  }
+    $('limits').textContent = `이번 테스트 남은 등록: 전체 ${scan.remaining.total}건 / 이 학생 ${scan.remaining.student}건. QR 확인은 5분간 유효합니다.`;
+    $('submit').disabled = true;
+    panel('student');
+    message();
+  } catch (error) {
+    scan = null;
+    message(error.message || '학생 조회에 실패했습니다. 카메라를 켜고 다시 스캔해 주세요.');
+  } finally { busy = false; }
 }
-
+function decode(time) {
+  if (!stream) return;
+  if (video.readyState >= 2 && time - lastFrameAt > 150) {
+    lastFrameAt = time;
+    const scale = Math.min(1, 800 / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale);
+    canvas.height = Math.round(video.videoHeight * scale);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    const code = window.jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'attemptBoth' });
+    if (code) { void lookup(code.data); return; }
+  }
+  frame = requestAnimationFrame(decode);
+}
 async function startCamera() {
-  stopCamera();
-  resultCard.hidden = true;
-  const currentGeneration = generation;
-
-  if (!navigator.mediaDevices?.getUserMedia) {
-    setStatus("카메라를 사용할 수 없어요. GitHub Pages의 HTTPS 주소로 접속해주세요.");
-    return;
+  if (busy || stream || $('start').disabled) return;
+  message();
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    return message('카메라를 사용할 수 없습니다. HTTPS 주소로 접속해 주세요. PC에서는 localhost도 사용할 수 있습니다.');
   }
-
-  startButton.disabled = true;
-  setStatus("카메라를 연결하고 있어요.");
-
+  if (!window.jsQR) return message('QR 해석 파일을 불러오지 못했습니다. 인터넷 연결과 CDN 차단 여부를 확인해 주세요.');
+  const version = ++cameraVersion;
+  $('start').disabled = true;
+  $('stop').hidden = false;
   try {
-    if (!await prepareDetector()) {
-      throw new Error("QR 인식 기능을 사용할 수 없습니다. 인터넷 연결을 확인해주세요.");
-    }
-
-    const camera = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" } },
-      audio: false
+    const acquired = await navigator.mediaDevices.getUserMedia({
+      audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
     });
-
-    if (currentGeneration !== generation) {
-      camera.getTracks().forEach(track => track.stop());
-      return;
-    }
-
-    stream = camera;
-    video.srcObject = camera;
+    if (version !== cameraVersion) { acquired.getTracks().forEach((track) => track.stop()); return; }
+    stream = acquired;
+    video.srcObject = stream;
     await video.play();
-
-    if (currentGeneration !== generation) return;
-
-    placeholder.hidden = true;
-    scanning = true;
-    setStatus("QR 코드를 사각형 안에 맞춰주세요.");
-    scanFrame(currentGeneration);
+    if (version !== cameraVersion) return;
+    $('start').hidden = true;
+    $('stop').hidden = false;
+    $('camera-hint').textContent = 'QR 코드를 중앙에 맞춰 주세요';
+    frame = requestAnimationFrame(decode);
   } catch (error) {
-    if (currentGeneration === generation) {
-      setStatus(error.name === "NotAllowedError"
-        ? "카메라 권한이 거부되었습니다. 브라우저 설정에서 허용해주세요."
-        : error.message || "카메라 연결에 실패했습니다.");
-      stopCamera();
-    }
-  } finally {
-    startButton.disabled = false;
+    if (version !== cameraVersion) return;
+    stopCamera();
+    message(error.name === 'NotAllowedError' ? '카메라 접근을 허용한 뒤 다시 켜 주세요.' : '카메라를 열 수 없습니다. 다른 앱의 카메라 사용을 종료하고 다시 시도해 주세요.');
   }
 }
-
-async function readPhoto(file) {
-  if (!file) return;
-
-  if (file.size > 15 * 1024 * 1024) {
-    setStatus("15MB 이하의 이미지를 선택해주세요.");
-    return;
-  }
-
-  stopCamera();
-  setStatus("사진에서 QR 코드를 찾고 있어요.");
-
-  let image = null;
-  let url = null;
-
+async function submit() {
+  if (busy || !scan) return;
+  const code = document.querySelector('input[name="criterion"]:checked')?.value;
+  if (!code) return;
+  pending ??= { scanToken: scan.scanToken, code, requestId: crypto.randomUUID() };
+  busy = true;
+  $('submit').disabled = true;
+  $('rescan').disabled = true;
+  document.querySelectorAll('input[name="criterion"]').forEach((input) => { input.disabled = true; });
+  message('승인 요청을 저장하고 있습니다…');
   try {
-    if (!await prepareDetector()) {
-      throw new Error("QR 인식 기능을 사용할 수 없습니다.");
-    }
-
-    url = URL.createObjectURL(file);
-    image = new Image();
-    image.src = url;
-    await image.decode();
-
-    const value = await decodeImage(image, image.naturalWidth, image.naturalHeight);
-    if (value) showResult(value);
-    else setStatus("사진에서 QR 코드를 찾지 못했습니다. 더 선명한 사진으로 시도해주세요.");
+    const result = await api('submit', pending);
+    $('receipt').textContent = `${result.requestId} · ${result.status}`;
+    panel('done');
+    scan = null; pending = null; message();
   } catch (error) {
-    setStatus(error.message || "사진을 읽지 못했습니다.");
-  } finally {
-    if (url) URL.revokeObjectURL(url);
-    photoInput.value = "";
-  }
+    // 응답 유실 시 항목 변경/다른 QR로 이동하면 중복 등록할 수 있으므로 재시도만 허용합니다.
+    message(`${error.message || '연결이 끊겼습니다.'}\n응답이 불확실하면 같은 요청으로 다시 시도해 주세요. 같은 요청ID는 한 번만 저장됩니다.`);
+    $('submit').textContent = '같은 요청으로 다시 확인';
+    if (error.retryable === false) {
+      pending = null;
+      $('rescan').disabled = false;
+      document.querySelectorAll('input[name="criterion"]').forEach((input) => { input.disabled = false; });
+    }
+  } finally { busy = false; $('submit').disabled = false; }
 }
-
-// 화면 버튼 연결
-startButton.addEventListener("click", startCamera);
-
-document.querySelector("#stop-scan").addEventListener("click", () => {
-  stopCamera();
-  setStatus("카메라를 종료했습니다.");
-});
-
-document.querySelector("#choose-photo").addEventListener("click", () => {
-  photoInput.click();
-});
-
-photoInput.addEventListener("change", event => {
-  readPhoto(event.target.files[0]);
-});
-
-document.querySelector("#scan-again").addEventListener("click", startCamera);
-
-document.querySelector("#check-manual").addEventListener("click", () => {
-  const value = document.querySelector("#manual-id").value.trim();
-  if (value) showResult(value);
-  else setStatus("학생 식별값을 입력해주세요.");
-});
-
-window.addEventListener("pagehide", stopCamera);
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) stopCamera();
-});
+function reset() {
+  if (busy) return;
+  scan = null; pending = null;
+  $('submit').textContent = '승인대기로 저장';
+  $('rescan').disabled = false;
+  panel('scan'); message();
+  void startCamera();
+}
+$('start').addEventListener('click', startCamera);
+$('stop').addEventListener('click', stopCamera);
+$('submit').addEventListener('click', submit);
+$('rescan').addEventListener('click', reset);
+$('again').addEventListener('click', reset);
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopCamera(); });
+window.addEventListener('pagehide', stopCamera);
