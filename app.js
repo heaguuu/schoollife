@@ -1,4 +1,6 @@
-/* QR 영상은 이 브라우저에서만 해석합니다. 서버에는 QR 문자열만 전달합니다. */
+/* GitHub Pages 전용. QR 영상은 브라우저에서 해석하고 GAS에는 문자열만 보냅니다. */
+// 같은 GAS 배포를 새 버전으로 갱신하면 이 URL은 그대로 사용합니다.
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyWuIP7wIPBBRlkxKGQqHki7ExX8Y7Uelhptix92uD-ZmyQoNcY-i1zPP7TOC6TL5b3/exec';
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 const canvas = $('canvas');
@@ -10,6 +12,7 @@ let busy = false;
 let scan = null;
 let pending = null;
 let lastFrameAt = 0;
+let barcodeDetector = null;
 
 function message(text = '') { $('message').textContent = text; }
 function panel(name) {
@@ -29,24 +32,95 @@ function stopCamera() {
   $('stop').hidden = true;
   $('camera-hint').textContent = '카메라를 켜면 스캔이 시작됩니다';
 }
-async function api(action, payload) {
-  const response = await fetch('/api', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, ...payload }), signal: AbortSignal.timeout(30000)
-  });
-  const result = await response.json();
-  if (!result.ok) {
-    const error = new Error(result.error || '요청을 처리하지 못했습니다.');
-    error.retryable = Boolean(result.retryable);
-    throw error;
+async function prepareDecoder() {
+  barcodeDetector = null;
+  if ('BarcodeDetector' in window) {
+    try {
+      const formats = await window.BarcodeDetector.getSupportedFormats();
+      if (formats.includes('qr_code')) barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] });
+    } catch { /* 지원하지 않는 환경에서는 jsQR로 처리합니다. */ }
   }
-  return result.data;
+  if (!barcodeDetector && typeof window.jsQR !== 'function') {
+    throw new Error('QR 인식 파일을 불러오지 못했습니다. 인터넷 연결을 확인하고 페이지를 다시 열어 주세요.');
+  }
+}
+async function decodeVideo() {
+  if (barcodeDetector) {
+    try {
+      const codes = await barcodeDetector.detect(video);
+      if (codes[0]?.rawValue) return codes[0].rawValue;
+    } catch {
+      barcodeDetector = null;
+      if (typeof window.jsQR !== 'function') throw new Error('기기 QR 인식기를 사용할 수 없고 대체 인식 파일도 없습니다. 페이지를 다시 열어 주세요.');
+    }
+  }
+  if (typeof window.jsQR !== 'function') return null;
+  // 기존에 인식되던 버전과 같은 최대 1200px 해상도를 사용합니다.
+  const scale = Math.min(1, 1200 / Math.max(video.videoWidth, video.videoHeight));
+  canvas.width = Math.max(1, Math.round(video.videoWidth * scale));
+  canvas.height = Math.max(1, Math.round(video.videoHeight * scale));
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+  return window.jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'attemptBoth' })?.data || null;
+}
+async function api(action, payload) {
+  if (location.protocol !== 'https:' || window.top !== window.self) {
+    throw new Error('GitHub Pages의 HTTPS 주소를 브라우저에서 직접 열어 주세요.');
+  }
+  // HTML 폼 제출은 CORS fetch가 아닙니다. GAS의 응답 페이지가 postMessage로
+  // 처리 결과를 반환합니다. HTML을 JSON으로 읽거나 no-cors로 성공을 추측하지 않습니다.
+  return new Promise((resolve, reject) => {
+    const nonce = crypto.randomUUID();
+    const frame = document.createElement('iframe');
+    frame.name = 'gas_' + nonce.replaceAll('-', '');
+    frame.hidden = true;
+    frame.referrerPolicy = 'no-referrer';
+    const form = document.createElement('form');
+    form.method = 'POST'; form.action = GAS_URL; form.target = frame.name; form.hidden = true;
+    const field = document.createElement('input');
+    field.type = 'hidden'; field.name = 'packet';
+    field.value = JSON.stringify({ action, payload, nonce, replyOrigin: location.origin });
+    form.append(field);
+    const cleanup = () => {
+      clearTimeout(timer);
+      window.removeEventListener('message', onMessage);
+      form.remove(); frame.remove();
+    };
+    const onMessage = (event) => {
+      // GAS는 내부 iframe에서 응답하므로 source가 바깥 iframe과 다릅니다.
+      // Google 응답 출처·요청별 난수·고정 프로토콜을 모두 확인합니다.
+      let host;
+      try { const url = new URL(event.origin); if (url.protocol !== 'https:') return; host = url.hostname; } catch { return; }
+      if (host !== 'script.google.com' && host !== 'script.googleusercontent.com' && !host.endsWith('-script.googleusercontent.com')) return;
+      const packet = event.data;
+      if (!packet || packet.channel !== 'qr-test-v1' || packet.nonce !== nonce || typeof packet.ok !== 'boolean') return;
+      cleanup();
+      if (packet.ok) resolve(packet.data);
+      else {
+        const error = new Error(packet.error || 'GAS에서 요청을 처리하지 못했습니다.');
+        error.retryable = Boolean(packet.retryable);
+        reject(error);
+      }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      const error = new Error('GAS 응답이 없습니다. 새 버전 웹 앱 배포, 모든 사용자 접근 권한, Code.gs의 PAGES_ORIGIN 설정을 확인해 주세요.');
+      error.retryable = true;
+      reject(error);
+    }, 45000);
+    window.addEventListener('message', onMessage);
+    document.body.append(frame, form);
+    form.submit();
+  });
 }
 async function lookup(qr) {
   if (busy) return;
   busy = true;
   stopCamera();
-  message('테스트 학생을 확인하고 있습니다…');
+  $('camera-hint').textContent = 'QR 인식 완료 · 학생 조회 중';
+  $('start').disabled = true;
+  $('start').textContent = 'QR 인식 완료 · 학생 조회 중…';
+  message('QR 인식 성공! 테스트 학생을 확인하고 있습니다…');
   try {
     scan = await api('lookup', { qr });
     pending = null;
@@ -72,22 +146,29 @@ async function lookup(qr) {
     message();
   } catch (error) {
     scan = null;
-    message(error.message || '학생 조회에 실패했습니다. 카메라를 켜고 다시 스캔해 주세요.');
-  } finally { busy = false; }
-}
-function decode(time) {
-  if (!stream) return;
-  if (video.readyState >= 2 && time - lastFrameAt > 150) {
-    lastFrameAt = time;
-    const scale = Math.min(1, 800 / video.videoWidth);
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
-    const code = window.jsQR(pixels.data, pixels.width, pixels.height, { inversionAttempts: 'attemptBoth' });
-    if (code) { void lookup(code.data); return; }
+    message('QR은 인식했습니다.\n' + (error.message || '학생 조회에 실패했습니다. 카메라를 켜고 다시 스캔해 주세요.'));
+  } finally {
+    busy = false;
+    $('start').disabled = false;
+    $('start').textContent = 'QR 다시 스캔';
   }
-  frame = requestAnimationFrame(decode);
+}
+async function decode(time, version) {
+  if (!stream || version !== cameraVersion) return;
+  if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0 && time - lastFrameAt > 220) {
+    lastFrameAt = time;
+    try {
+      const value = await decodeVideo();
+      if (!stream || version !== cameraVersion) return;
+      if (value) { void lookup(value); return; }
+    } catch (error) {
+      if (version !== cameraVersion) return;
+      stopCamera();
+      message(error.message || 'QR 영상을 처리하지 못했습니다. 카메라를 다시 켜 주세요.');
+      return;
+    }
+  }
+  if (stream && version === cameraVersion) frame = requestAnimationFrame((next) => { void decode(next, version); });
 }
 async function startCamera() {
   if (busy || stream || $('start').disabled) return;
@@ -95,11 +176,12 @@ async function startCamera() {
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     return message('카메라를 사용할 수 없습니다. HTTPS 주소로 접속해 주세요. PC에서는 localhost도 사용할 수 있습니다.');
   }
-  if (!window.jsQR) return message('QR 해석 파일을 불러오지 못했습니다. 인터넷 연결과 CDN 차단 여부를 확인해 주세요.');
   const version = ++cameraVersion;
   $('start').disabled = true;
   $('stop').hidden = false;
   try {
+    await prepareDecoder();
+    if (version !== cameraVersion) return;
     const acquired = await navigator.mediaDevices.getUserMedia({
       audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
     });
@@ -111,11 +193,13 @@ async function startCamera() {
     $('start').hidden = true;
     $('stop').hidden = false;
     $('camera-hint').textContent = 'QR 코드를 중앙에 맞춰 주세요';
-    frame = requestAnimationFrame(decode);
+    message('카메라 연결 완료 · QR을 찾고 있어요. QR 전체가 보이도록 맞춰 주세요.');
+    lastFrameAt = 0;
+    frame = requestAnimationFrame((time) => { void decode(time, version); });
   } catch (error) {
     if (version !== cameraVersion) return;
     stopCamera();
-    message(error.name === 'NotAllowedError' ? '카메라 접근을 허용한 뒤 다시 켜 주세요.' : '카메라를 열 수 없습니다. 다른 앱의 카메라 사용을 종료하고 다시 시도해 주세요.');
+    message(error.name === 'NotAllowedError' ? '카메라 접근을 허용한 뒤 다시 켜 주세요.' : error.message || '카메라를 열 수 없습니다. 다른 앱의 카메라 사용을 종료하고 다시 시도해 주세요.');
   }
 }
 async function submit() {
