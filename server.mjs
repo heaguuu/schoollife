@@ -1,89 +1,46 @@
-import http from 'node:http';
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
-
-const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
-const files = {
-  '/': ['index.html', 'text/html; charset=utf-8'],
-  '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
-  '/app.js': ['app.js', 'text/javascript; charset=utf-8']
-};
-
-export function createServer({ gasUrl, secret, origin, fetchImpl = fetch, now = Date.now }) {
-  let windowStart = now();
-  let requests = 0;
-  let inFlight = 0;
-  const json = (res, status, value) => {
-    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(value));
-  };
-  return http.createServer(async (req, res) => {
-    res.setHeader('Cache-Control', 'no-store');
-    res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
-    try {
-      if (req.method === 'GET' && files[req.url]) {
-        const [file, type] = files[req.url];
-        res.writeHead(200, { 'Content-Type': type });
-        return res.end(await readFile(resolve(publicDir, file)));
-      }
-      if (req.url !== '/api' || req.method !== 'POST') {
-        return json(res, 404, { ok: false, error: '찾을 수 없는 경로입니다.' });
-      }
-      if (req.headers.origin !== origin || !String(req.headers['content-type']).startsWith('application/json')) {
-        return json(res, 403, { ok: false, error: '허용하지 않는 요청입니다.' });
-      }
-      if (!secret || !/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(gasUrl || '')) {
-        return json(res, 503, { ok: false, error: '서버의 GAS 연결 설정을 완료해 주세요.' });
-      }
-      if (now() - windowStart >= 60000) { windowStart = now(); requests = 0; }
-      if (++requests > 60 || inFlight >= 4) {
-        return json(res, 429, { ok: false, error: '요청이 많습니다. 잠시 후 다시 시도해 주세요.' });
-      }
-      let raw = '';
-      for await (const chunk of req) {
-        raw += chunk.toString('utf8');
-        if (Buffer.byteLength(raw) > 4096) {
-          return json(res, 413, { ok: false, error: '요청이 너무 큽니다.' });
-        }
-      }
-      let input;
-      try { input = JSON.parse(raw); } catch { return json(res, 400, { ok: false, error: '요청 형식 오류입니다.' }); }
-      if (!input || !['lookup', 'submit'].includes(input.action)) {
-        return json(res, 400, { ok: false, error: '허용하지 않는 작업입니다.' });
-      }
-      // 브라우저가 secret, timestamp 또는 다른 GAS 기능을 지정할 수 없게 재구성합니다.
-      const payload = input.action === 'lookup'
-        ? { qr: input.qr }
-        : { scanToken: input.scanToken, code: input.code, requestId: input.requestId };
-      inFlight++;
-      try {
-        const upstream = await fetchImpl(gasUrl, {
-          method: 'POST', redirect: 'follow',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: input.action, payload, secret, timestamp: now() }),
-          signal: AbortSignal.timeout(25000)
-        });
-        if (!upstream.ok) throw new Error('upstream');
-        const result = await upstream.json();
-        if (typeof result.ok !== 'boolean') throw new Error('format');
-        return json(res, result.ok ? 200 : 400, result);
-      } catch {
-        // 저장 직후 응답이 끊겼을 수도 있습니다. 같은 요청ID로 재시도해야 합니다.
-        return json(res, 502, { ok: false, retryable: true, error: 'GAS 응답을 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.' });
-      } finally { inFlight--; }
-    } catch {
-      if (!res.headersSent) json(res, 500, { ok: false, error: '서버 처리 중 오류가 발생했습니다.' });
-      else res.end();
-    }
-  });
-}
-
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const origin = process.env.APP_ORIGIN || 'http://localhost:3000';
-  createServer({ gasUrl: process.env.GAS_URL, secret: process.env.GAS_SECRET, origin })
-    .listen(Number(process.env.PORT) || 3000, '0.0.0.0', () => console.log(`QR 테스트 서버 시작: ${origin}`));
-}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f8ff">
+  <title>생활지도 관리 · QR 테스트</title>
+  <link rel="stylesheet" href="./style.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <script defer src="./app.js?v=20261028-qr2"></script>
+</head>
+<body>
+  <div class="phone-app">
+    <header class="phone-header">
+      <div class="brand-mark" aria-hidden="true">高</div>
+      <div><span class="eyebrow">SCHOOL MANAGEMENT</span><h1>생활지도 관리</h1></div>
+      <span class="test-badge">TEST</span>
+    </header>
+    <main class="phone-main">
+      <section class="welcome">
+        <span class="date-label">QR SCAN TEST</span><h2>학생증 QR 확인</h2>
+        <p>테스트 학생의 QR 코드를 스캔하고 벌점 승인 요청을 저장해요.</p>
+      </section>
+      <ol class="steps" aria-label="진행 단계"><li class="active" id="step1">1 QR 스캔</li><li id="step2">2 항목 선택</li><li id="step3">3 요청 완료</li></ol>
+      <section class="scan-card" id="scan-panel">
+        <div class="scan-card-heading"><div class="scan-icon" aria-hidden="true">⌗</div><div><h3>QR 코드 스캔하기</h3><p>카메라를 실행한 뒤 QR을 사각형에 맞춰주세요.</p></div></div>
+        <div class="camera-wrap"><video id="video" muted playsinline aria-label="QR 스캔 카메라"></video><div class="scan-frame" aria-hidden="true"></div><span id="camera-hint">카메라를 켜면 스캔이 시작됩니다</span></div>
+        <canvas id="canvas" hidden></canvas>
+        <button class="primary-button" id="start" type="button">QR 스캔 시작</button><button class="secondary-button" id="stop" type="button" hidden>카메라 종료</button>
+        <p class="help">테스트 학생 QR만 사용할 수 있어요. 휴대폰에서는 HTTPS 주소로 접속해 주세요.</p>
+      </section>
+      <section class="scan-card" id="student-panel" hidden>
+        <div class="scan-card-heading"><div class="scan-icon" aria-hidden="true">✓</div><div><h3>테스트 학생 확인</h3><p>등록할 벌점 항목을 선택해 주세요.</p></div></div>
+        <div class="student"><h3 id="student-name"></h3><p id="student-detail"></p></div>
+        <fieldset><legend>벌점 항목</legend><div id="criteria"></div></fieldset><p id="limits" class="help"></p>
+        <button class="primary-button" id="submit" type="button" disabled>승인대기로 저장</button><button class="secondary-button" id="rescan" type="button">다른 QR 스캔하기</button>
+      </section>
+      <section class="result-card" id="done-panel" hidden>
+        <div class="result-check" aria-hidden="true">✓</div><h3>승인 요청을 저장했어요</h3><p>점수 부여 시트에 <b>승인대기</b>로 기록되었습니다.</p><p id="receipt"></p><button class="secondary-button" id="again" type="button">다음 학생 스캔하기</button>
+      </section>
+      <p class="scan-status" id="message" role="status" aria-live="polite"></p>
+      <p class="test-note">QR 수정판 2 · 테스트 학생 전용<br>카메라 영상은 저장하거나 전송하지 않습니다.</p>
+    </main>
+  </div>
+</body>
+</html>
