@@ -1,46 +1,242 @@
-r<!doctype html>
+<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f3f8ff">
-  <title>생활지도 관리 · QR 테스트</title>
-  <link rel="stylesheet" href="./style.css">
-  <script defer src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
-  <script defer src="./app.js?v=20261028-student3"></script>
+  <title>생활지도 관리</title>
+
+  <!-- CSS와 JS는 다음 작업에서 연결합니다. -->
 </head>
+
 <body>
   <div class="phone-app">
     <header class="phone-header">
       <div class="brand-mark" aria-hidden="true">高</div>
-      <div><span class="eyebrow">SCHOOL MANAGEMENT</span><h1>생활지도 관리</h1></div>
-      <span class="test-badge">TEST 3</span>
+
+      <div>
+        <span class="eyebrow">SCHOOL MANAGEMENT</span>
+        <h1>생활지도 관리</h1>
+      </div>
     </header>
+
     <main class="phone-main">
       <section class="welcome">
-        <span class="date-label">QR SCAN TEST</span><h2>학생증 QR 확인</h2>
-        <p>테스트 학생의 QR 코드를 스캔하고 벌점 승인 요청을 저장해요.</p>
+        <h2>QR로 벌점 등록</h2>
+        <p>
+          학생증 QR을 스캔하고 학생 정보를 확인한 뒤
+          벌점 항목을 선택해 주세요.
+        </p>
       </section>
-      <ol class="steps" aria-label="진행 단계"><li class="active" id="step1">1 QR 스캔</li><li id="step2">2 항목 선택</li><li id="step3">3 요청 완료</li></ol>
-      <section class="scan-card" id="scan-panel">
-        <div class="scan-card-heading"><div class="scan-icon" aria-hidden="true">⌗</div><div><h3>QR 코드 스캔하기</h3><p>카메라를 실행한 뒤 QR을 사각형에 맞춰주세요.</p></div></div>
-        <div class="camera-wrap"><video id="video" muted playsinline aria-label="QR 스캔 카메라"></video><div class="scan-frame" aria-hidden="true"></div><span id="camera-hint">카메라를 켜면 스캔이 시작됩니다</span></div>
+
+      <ol class="steps" aria-label="진행 단계">
+        <li id="step1" aria-current="step">1. QR 스캔</li>
+        <li id="step2">2. 학생 확인 · 벌점 선택</li>
+        <li id="step3">3. 저장 완료</li>
+      </ol>
+
+      <!-- 1. 카메라로 QR 인식 -->
+      <section id="scan-panel"
+               class="scan-card"
+               aria-labelledby="scan-title">
+        <h2 id="scan-title">학생증 QR 스캔</h2>
+        <p>학생증의 QR 코드 전체가 보이도록 맞춰 주세요.</p>
+
+        <div class="camera-wrap">
+          <video id="video"
+                 autoplay
+                 muted
+                 playsinline
+                 aria-label="QR 스캔 카메라">
+          </video>
+
+          <div class="scan-frame" aria-hidden="true"></div>
+          <p id="camera-hint">카메라 대기 중</p>
+        </div>
+
+        <!-- QR 해석용. 영상은 업로드하지 않습니다. -->
         <canvas id="canvas" hidden></canvas>
-        <button class="primary-button" id="start" type="button">QR 스캔 시작</button><button class="secondary-button" id="stop" type="button" hidden>카메라 종료</button>
-        <p class="help">테스트 학생 QR만 사용할 수 있어요. 휴대폰에서는 HTTPS 주소로 접속해 주세요.</p>
+
+        <div class="camera-actions">
+          <button id="start"
+                  class="primary-button"
+                  type="button">
+            QR 스캔 시작
+          </button>
+
+          <button id="stop"
+                  class="secondary-button"
+                  type="button"
+                  hidden>
+            카메라 종료
+          </button>
+        </div>
+
+        <p class="help">
+          카메라 접근 권한을 허용해 주세요.
+          휴대폰에서는 HTTPS 주소로 접속해야 합니다.
+        </p>
       </section>
-      <section class="scan-card" id="student-panel" hidden>
-        <div class="scan-card-heading"><div class="scan-icon" aria-hidden="true">✓</div><div><h3>테스트 학생 확인</h3><p>등록할 벌점 항목을 선택해 주세요.</p></div></div>
-        <div class="student"><h3 id="student-name"></h3><p id="student-detail"></p></div>
-        <fieldset><legend>벌점 항목</legend><div id="criteria"></div></fieldset><p id="limits" class="help"></p>
-        <button class="primary-button" id="submit" type="button" disabled>승인대기로 저장</button><button class="secondary-button" id="rescan" type="button">다른 QR 스캔하기</button>
+
+      <!-- QR을 읽은 뒤 학생명부 조회 중 표시 -->
+      <section id="loading-panel"
+               class="loading-card"
+               aria-labelledby="loading-title"
+               aria-busy="true"
+               hidden>
+        <h2 id="loading-title">학생 정보를 확인하고 있어요</h2>
+        <p>
+          인식한 QR 값과 학생명부의 QR식별값이
+          일치하는 학생을 찾고 있습니다.
+        </p>
       </section>
-      <section class="result-card" id="done-panel" hidden>
-        <div class="result-check" aria-hidden="true">✓</div><h3>승인 요청을 저장했어요</h3><p>점수 부여 시트에 <b>승인대기</b>로 기록되었습니다.</p><p id="receipt"></p><button class="secondary-button" id="again" type="button">다음 학생 스캔하기</button>
+
+      <!-- 2. 일치한 학생 표시 및 벌점 선택 -->
+      <section id="student-panel"
+               class="student-card"
+               aria-labelledby="student-title"
+               hidden>
+        <h2 id="student-title">학생 확인 · 벌점 선택</h2>
+
+        <section class="student-info"
+                 aria-labelledby="student-name">
+          <h3 id="student-name">학생 이름</h3>
+          <p id="student-detail"></p>
+
+          <!-- 값은 학생명부에서 조회한 결과로 채웁니다. -->
+          <dl>
+            <div>
+              <dt>학년</dt>
+              <dd id="student-grade">—</dd>
+            </div>
+
+            <div>
+              <dt>반</dt>
+              <dd id="student-class">—</dd>
+            </div>
+
+            <div>
+              <dt>번호</dt>
+              <dd id="student-number">—</dd>
+            </div>
+
+            <div>
+              <dt>학생ID</dt>
+              <dd id="student-id">—</dd>
+            </div>
+          </dl>
+
+          <button id="rescan"
+                  class="secondary-button"
+                  type="button">
+            다른 학생 QR 스캔
+          </button>
+        </section>
+
+        <section class="penalty-section"
+                 aria-labelledby="penalty-title">
+          <h3 id="penalty-title">벌점 항목</h3>
+          <p>이 학생에게 등록할 벌점을 선택해 주세요.</p>
+
+          <fieldset id="criteria-fieldset">
+            <legend>등록할 벌점 선택</legend>
+
+            <!-- 점수기준 시트의 사용 중인 벌점 항목을 JS로 추가 -->
+            <div id="criteria"></div>
+          </fieldset>
+
+          <p id="criteria-empty" hidden>
+            사용 가능한 벌점 항목이 없습니다.
+          </p>
+
+          <div id="selection-summary" hidden>
+            <p>
+              선택 항목:
+              <strong id="selected-reason">—</strong>
+            </p>
+            <p>
+              벌점:
+              <strong id="selected-score">—</strong>점
+            </p>
+          </div>
+
+          <p id="limits" class="help"></p>
+
+          <button id="submit"
+                  class="primary-button"
+                  type="button"
+                  disabled>
+            승인대기로 저장
+          </button>
+
+          <p class="help">
+            표시된 학생에게 선택한 벌점의 승인 요청을 등록합니다.
+          </p>
+        </section>
       </section>
-      <p class="scan-status" id="message" role="status" aria-live="polite"></p>
-      <p class="test-note">QR 학생조회 3 · QR에 일치하는 학생에게 선택 벌점 저장<br>카메라 영상은 저장하거나 전송하지 않습니다.</p>
+
+      <!-- 3. 서버에서 저장 성공을 확인한 뒤 표시 -->
+      <section id="done-panel"
+               class="result-card"
+               aria-labelledby="done-title"
+               hidden>
+        <div class="result-check" aria-hidden="true">✓</div>
+
+        <h2 id="done-title">승인 요청을 저장했어요</h2>
+        <p>점수 부여 시트에 승인대기로 기록되었습니다.</p>
+
+        <dl>
+          <div>
+            <dt>학생</dt>
+            <dd id="saved-student">—</dd>
+          </div>
+
+          <div>
+            <dt>벌점 항목</dt>
+            <dd id="saved-reason">—</dd>
+          </div>
+
+          <div>
+            <dt>점수</dt>
+            <dd id="saved-score">—</dd>
+          </div>
+        </dl>
+
+        <p id="receipt"></p>
+
+        <button id="again"
+                class="primary-button"
+                type="button">
+          다음 학생 QR 스캔
+        </button>
+      </section>
+
+      <!-- 오류 및 진행 상태 안내 -->
+      <p id="message"
+         class="status-message"
+         role="status"
+         aria-live="polite"
+         aria-atomic="true">
+      </p>
+
+      <noscript>
+        QR 인식과 학생 조회에는 JavaScript가 필요합니다.
+      </noscript>
     </main>
+
+    <footer class="app-footer">
+      <p>카메라 영상은 저장하거나 전송하지 않습니다.</p>
+    </footer>
   </div>
+
+  <!-- JS에서 복제하여 점수기준 시트 값으로 채울 벌점 항목 -->
+  <template id="criterion-template">
+    <label class="criterion">
+      <input type="radio" name="criterion" required>
+      <span class="criterion-reason"></span>
+      <strong class="criterion-score"></strong>
+    </label>
+  </template>
 </body>
 </html>
