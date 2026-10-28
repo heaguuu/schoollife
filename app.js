@@ -1,6 +1,6 @@
 /* GitHub Pages 전용. QR 영상은 브라우저에서 해석하고 GAS에는 문자열만 보냅니다. */
 // 같은 GAS 배포를 새 버전으로 갱신하면 이 URL은 그대로 사용합니다.
-const GAS_URL = 'https://script.google.com/macros/library/d/12-ybkCW4hs_qlp6oxP3kwQ7eDkgc18UAOF0_imQhsPjUVR_zexjQj-5M/5';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbyxnThzmGKUNgbCbF4IfC4dbLPx1hrTqUdr06cpA-p3yMYO2gkyVc8HmlW6q-bWawuX/exec';
 const $ = (id) => document.getElementById(id);
 const video = $('video');
 const canvas = $('canvas');
@@ -13,12 +13,18 @@ let scan = null;
 let pending = null;
 let lastFrameAt = 0;
 let barcodeDetector = null;
+let selectedCriterion = null;
 
 function message(text = '') { $('message').textContent = text; }
 function panel(name) {
-  ['scan', 'student', 'done'].forEach((value, i) => {
+  ['scan', 'loading', 'student', 'done'].forEach((value) => {
     $(`${value}-panel`).hidden = value !== name;
-    $(`step${i + 1}`).classList.toggle('active', value === name);
+  });
+  ['scan', 'student', 'done'].forEach((value, i) => {
+    const active = value === name || (value === 'scan' && name === 'loading');
+    $(`step${i + 1}`).classList.toggle('active', active);
+    if (active) $(`step${i + 1}`).setAttribute('aria-current', 'step');
+    else $(`step${i + 1}`).removeAttribute('aria-current');
   });
 }
 function stopCamera() {
@@ -120,19 +126,34 @@ async function lookup(qr) {
   $('camera-hint').textContent = 'QR 인식 완료 · 학생 조회 중';
   $('start').disabled = true;
   $('start').textContent = 'QR 인식 완료 · 학생 조회 중…';
-  message('QR 인식 성공! 테스트 학생을 확인하고 있습니다…');
+  panel('loading');
+  message('QR 인식 성공! 시트에서 학생을 확인하고 있습니다…');
   try {
     scan = await api('lookup', { qr });
     pending = null;
+    selectedCriterion = null;
+    $('selection-summary').hidden = true;
     $('student-name').textContent = scan.student.name;
-    $('student-detail').textContent = `${scan.student.grade}학년 ${scan.student.classNo}반 ${scan.student.number}번 · ${scan.student.id}`;
+    $('student-detail').textContent = 'QR식별값이 일치하는 학생입니다.';
+    $('student-grade').textContent = scan.student.grade || '—';
+    $('student-class').textContent = scan.student.classNo || '—';
+    $('student-number').textContent = scan.student.number || '—';
+    $('student-id').textContent = scan.student.id;
     $('criteria').replaceChildren();
     for (const item of scan.criteria) {
       const label = document.createElement('label');
       label.className = 'criterion';
       const input = document.createElement('input');
       input.type = 'radio'; input.name = 'criterion'; input.value = item.code;
-      input.addEventListener('change', () => { pending = null; $('submit').disabled = false; });
+      input.addEventListener('change', () => {
+        selectedCriterion = item;
+        pending = null;
+        $('selected-reason').textContent = item.reason;
+        $('selected-score').textContent = String(item.score);
+        $('selection-summary').hidden = false;
+        $('submit').textContent = '승인대기로 저장';
+        $('submit').disabled = false;
+      });
       const reason = document.createElement('span');
       reason.textContent = item.reason;
       const score = document.createElement('b');
@@ -141,11 +162,13 @@ async function lookup(qr) {
       $('criteria').append(label);
     }
     $('limits').textContent = `이번 테스트 남은 등록: 전체 ${scan.remaining.total}건 / 이 학생 ${scan.remaining.student}건. QR 확인은 5분간 유효합니다.`;
+    $('criteria-empty').hidden = scan.criteria.length > 0;
     $('submit').disabled = true;
     panel('student');
     message();
   } catch (error) {
     scan = null;
+    panel('scan');
     message('QR은 인식했습니다.\n' + (error.message || '학생 조회에 실패했습니다. 카메라를 켜고 다시 스캔해 주세요.'));
   } finally {
     busy = false;
@@ -204,7 +227,7 @@ async function startCamera() {
 }
 async function submit() {
   if (busy || !scan) return;
-  const code = document.querySelector('input[name="criterion"]:checked')?.value;
+  const code = selectedCriterion?.code;
   if (!code) return;
   pending ??= { scanToken: scan.scanToken, code, requestId: crypto.randomUUID() };
   busy = true;
@@ -214,6 +237,9 @@ async function submit() {
   message('승인 요청을 저장하고 있습니다…');
   try {
     const result = await api('submit', pending);
+    $('saved-student').textContent = `${scan.student.name} · ${scan.student.id}`;
+    $('saved-reason').textContent = selectedCriterion.reason;
+    $('saved-score').textContent = `${selectedCriterion.score}점`;
     $('receipt').textContent = `${result.requestId} · ${result.status}`;
     panel('done');
     scan = null; pending = null; message();
@@ -231,6 +257,7 @@ async function submit() {
 function reset() {
   if (busy) return;
   scan = null; pending = null;
+  selectedCriterion = null;
   $('submit').textContent = '승인대기로 저장';
   $('rescan').disabled = false;
   panel('scan'); message();
